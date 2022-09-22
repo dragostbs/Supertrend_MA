@@ -1,0 +1,123 @@
+//@version=4
+strategy("Supertrend&MA", overlay=true)
+
+/////////////////////// -Supertrend- ///////////////////////
+// User inputs
+Periods = input(title="ATR Period", type=input.integer, defval=10)
+src1 = input(hl2, title="Source")
+Multiplier = input(title="ATR Multiplier", type=input.float, step=0.1, defval=3.0)
+changeATR= input(title="Change ATR Calculation Method ?", type=input.bool, defval=true)
+
+highlighting = input(title="Highlighter On/Off ?", type=input.bool, defval=true)
+
+// Representation calculus
+atr2 = sma(tr, Periods)
+atr= changeATR ? atr(Periods) : atr2
+up=src1-(Multiplier*atr)
+up1 = nz(up[1],up)
+up := close[1] > up1 ? max(up,up1) : up
+dn=src1+(Multiplier*atr)
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? min(dn, dn1) : dn
+trend = 1
+trend := nz(trend[1], trend)
+trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+upPlot = plot(trend == 1 ? up : na, title="Up Trend", style=plot.style_linebr, linewidth=2, color=color.green)
+buySignal = trend == 1 and trend[1] == -1
+
+// Plotting
+plotshape(buySignal ? up : na, title="UpTrend Begins", location=location.absolute, style=shape.circle, size=size.tiny, color=color.green, transp=0)
+dnPlot = plot(trend == 1 ? na : dn, title="Down Trend", style=plot.style_linebr, linewidth=2, color=color.red)
+sellSignal = trend == -1 and trend[1] == 1
+plotshape(sellSignal ? dn : na, title="DownTrend Begins", location=location.absolute, style=shape.circle, size=size.tiny, color=color.red, transp=0)
+mPlot = plot(ohlc4, title="", style=plot.style_circles, linewidth=0)
+
+// Filling
+longFillColor = highlighting ? (trend == 1 ? color.green : color.white) : color.white
+shortFillColor = highlighting ? (trend == -1 ? color.red : color.white) : color.white
+fill(mPlot, upPlot, title="UpTrend Highligter", color=longFillColor)
+fill(mPlot, dnPlot, title="DownTrend Highligter", color=shortFillColor)
+alertcondition(buySignal, title="SuperTrend Buy", message="SuperTrend Buy!")
+alertcondition(sellSignal, title="SuperTrend Sell", message="SuperTrend Sell!")
+changeCond = trend != trend[1]
+alertcondition(changeCond, title="SuperTrend Direction Change", message="SuperTrend has changed direction!")
+
+/////////////////////// -MA- ///////////////////////
+// User input
+length = input(title="Length", type=input.integer, defval=200)
+src2 = input(close, title="Source")
+offset = input(title="Offset", type=input.integer, defval=0, minval=-500, maxval=500)
+maLoockback = input(title="MA Loockback", type=input.integer, defval=3)
+maxBars = input(title="Max bars beyound MA", type=input.integer, defval=1)
+
+// R&R => risk & reward input and stop loss input
+rr = input(title="R&R", type=input.float, defval=1.5, tooltip="Risk:Reward profile", group="Strategy Settings")
+stopMultiplier = input(title="Stop Loss ATR", type=input.float, defval=1.0, tooltip="Stop loss multiplier X ATR", group="Strategy Settings")
+
+// Representation
+indicator = sma(src2, length)
+
+// Plotting
+plot(indicator, color=color.navy, title="MA", offset=offset)
+
+/////////////////////// -Strategy- ///////////////////////
+// Breach check
+barsAbove = 0
+barsBellow = 0
+
+for i = 0 to maLoockback
+    if close[i] > indicator
+        barsAbove := barsAbove + 1
+    if close[i] < indicator
+        barsBellow := barsBellow + 1
+
+// Adding filters
+longFilter = close > indicator and barsBellow <= maxBars and buySignal 
+shortFilter = close < indicator and barsAbove <= maxBars and sellSignal 
+
+// Entry reasons
+longEntry = longFilter 
+shortEntry = shortFilter 
+
+// Plot signals
+plotshape(longEntry ? 1 : na, style=shape.arrowup, color=color.black)
+plotshape(shortEntry ? 1 : na, style=shape.arrowdown, color=color.black)
+
+// Confirmation setup
+stopSize = atr * stopMultiplier
+longStopPrice = low < low[1] ? low - stopSize : low[1] - stopSize
+longStopDistance = close - longStopPrice
+longTargetPrice = close + (longStopDistance * rr)
+shortStopPrice = high > high[1] ? high + stopSize : high[1] + stopSize
+shortStopDistance = shortStopPrice - close
+shortTargetPrice = close - (shortStopDistance * rr)
+
+// Saving stops & targets
+var tradeStopPrice = 0.0
+var tradeTargetPrice = 0.0
+
+// Detecting long setups and trigger alerts
+if longEntry
+    tradeStopPrice := longStopPrice
+    tradeTargetPrice := longTargetPrice
+    // Getting long alerts
+    alert("Price (" + tostring(close) + ") long trading position (" + tostring(atr) + "). ", alert.freq_once_per_bar)
+
+// Detecting short setups and trigger alerts
+if shortEntry
+    tradeStopPrice := shortStopPrice
+    tradeTargetPrice := shortTargetPrice
+    // Getting short alerts
+    alert("Price (" + tostring(close) + ") short trading position (" + tostring(atr) + "). ", alert.freq_once_per_bar_close)
+    
+// Entry setup
+strategy.entry(id="Long", long=strategy.long, when = longEntry)
+strategy.entry(id="Short", long=strategy.short, when = shortEntry)
+
+// Exit setup
+strategy.exit(id="Long Exit", from_entry="Long", limit=tradeTargetPrice, stop=tradeStopPrice, when=strategy.position_size > 0)
+strategy.exit(id="Short Exit", from_entry="Short", limit=tradeTargetPrice, stop=tradeStopPrice, when=strategy.position_size < 0)
+    
+// Draw data Tp & Sl 
+plot(strategy.position_size != 0 or longEntry or shortEntry ? tradeStopPrice : na, title="Trade Stop Price", color=color.black, style=plot.style_linebr, transp = 0)
+plot(strategy.position_size != 0 or longEntry or shortEntry ? tradeTargetPrice : na, title="Trade Target Price", color=color.black, style=plot.style_linebr, transp = 0)
