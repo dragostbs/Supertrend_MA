@@ -82,8 +82,8 @@ for i = 0 to maLoockback
         barsBellow := barsBellow + 1
 
 // Adding filters
-longFilter = close > indicator and indicator2 and barsBellow <= maxBars and buySignal 
-shortFilter = close < indicator and indicator2 and barsAbove <= maxBars and sellSignal 
+longFilter = close > indicator and barsBellow and close > indicator2 and barsBellow <= maxBars and buySignal 
+shortFilter = close < indicator and barsAbove and close < indicator2 and barsAbove <= maxBars and sellSignal 
 
 // Entry reasons
 longEntry = longFilter 
